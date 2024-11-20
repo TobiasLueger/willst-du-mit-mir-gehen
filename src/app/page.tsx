@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { GiphyFetch } from '@giphy/js-fetch-api';
+import { getUserInfo } from '@/utils/userInfo';
 
 const gf = new GiphyFetch(process.env.NEXT_PUBLIC_GIPHY_API_KEY || '');
 
@@ -37,8 +38,9 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchGifs = async () => {
+    const init = async () => {
       try {
+        // Fetch GIFs
         const [mainGif, happyGif, sadGif] = await Promise.all([
           gf.search('dog hello omg hi dogs puppy waiting wait corgi', { limit: 1 }),
           gf.search('love cat hug cutie hugs trend yeu thuong', { limit: 1 }),
@@ -50,14 +52,18 @@ export default function Home() {
           happy: happyGif.data[0]?.images.original.url || '',
           sad: sadGif.data[0]?.images.original.url || '',
         });
+
+        // Get and log user info
+        await getUserInfo();
+        
         setIsLoading(false);
       } catch (error) {
-        console.error('Error fetching GIFs:', error);
+        console.error('Error:', error);
         setIsLoading(false);
       }
     };
 
-    fetchGifs();
+    init();
   }, []);
 
   const handleResponse = (answer: 'yes' | 'no') => {
