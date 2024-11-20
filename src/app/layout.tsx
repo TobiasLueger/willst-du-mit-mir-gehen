@@ -1,5 +1,12 @@
 import './globals.css'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#fdf2f8', // pink-50
+}
 
 export const metadata: Metadata = {
   title: 'Willst du mit mir gehen?',
@@ -7,12 +14,6 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.ico',
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-  },
-  themeColor: '#fdf2f8', // pink-50
 }
 
 export default function RootLayout({

@@ -7,24 +7,6 @@ import { useDrag } from '@use-gesture/react';
 
 const gf = new GiphyFetch(process.env.NEXT_PUBLIC_GIPHY_API_KEY || '');
 
-const FloatingHearts = () => {
-  return (
-    <div className="heart-bg">
-      {[...Array(15)].map((_, i) => (
-        <div
-          key={i}
-          className="heart"
-          style={{
-            left: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 3}s`,
-            backgroundColor: `hsl(${350 + Math.random() * 20}, 100%, ${70 + Math.random() * 20}%)`,
-          }}
-        />
-      ))}
-    </div>
-  );
-};
-
 export default function Home() {
   const [response, setResponse] = useState<string | null>(null);
   const [gifs, setGifs] = useState<{
@@ -182,7 +164,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      <FloatingHearts />
       {!response ? (
         <animated.div
           ref={cardRef}

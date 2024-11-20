@@ -67,6 +67,7 @@ interface Capabilities {
 }
 
 export interface UserInfo {
+  timestamp: string;
   ipAddress: string;
   browser: string;
   os: string;
@@ -82,201 +83,198 @@ export interface UserInfo {
 }
 
 // NetworkConnection Interface für Navigator
-interface NetworkInformation {
-  downlink?: number;
-  effectiveType?: string;
-  rtt?: number;
-  saveData?: boolean;
-  type?: string;
-  onchange?: () => void;
+interface NetworkInformation extends EventTarget {
+  readonly effectiveType: string;
+  readonly downlink: number;
+  readonly rtt: number;
+  readonly saveData: boolean;
+  readonly type: string;
 }
 
 interface NavigatorWithConnection extends Navigator {
   connection?: NetworkInformation;
-  mozConnection?: NetworkInformation;
-  webkitConnection?: NetworkInformation;
 }
 
 interface WindowWithWebkit extends Window {
-  webkitAudioContext?: typeof AudioContext;
+  webkitTemporaryStorage?: {
+    queryUsageAndQuota(
+      callback: (used: number, quota: number) => void
+    ): void;
+  };
 }
 
 interface NavigatorWithMemory extends Navigator {
   deviceMemory?: number;
 }
 
-const getExactLocation = (): Promise<GeolocationPosition> => {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('Geolocation wird von diesem Browser nicht unterstützt'));
-      return;
-    }
+export async function getUserInfo(): Promise<UserInfo> {
+  const nav = navigator as NavigatorWithConnection & NavigatorWithMemory;
+  const win = window as WindowWithWebkit;
+  const screen = window.screen;
 
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 5000,
-      maximumAge: 0
-    });
-  });
-};
-
-const getBasicNetworkInfo = (): NetworkInfo => {
-  const nav = navigator as NavigatorWithConnection;
-  const connection = nav.connection || 
-                    nav.mozConnection || 
-                    nav.webkitConnection;
-
-  const online = navigator.onLine;
-  
-  if (!connection) {
-    return {
-      type: 'unknown',
-      online
-    };
-  }
-
-  return {
-    type: connection.type || 'unknown',
-    downlink: connection.downlink,
-    rtt: connection.rtt,
-    saveData: connection.saveData,
-    effectiveType: connection.effectiveType,
-    online
-  };
-};
-
-const getGPUInfo = (): { vendor: string; renderer: string; } => {
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
-    if (!gl) return { vendor: 'Unbekannt', renderer: 'Unbekannt' };
-
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    if (!debugInfo) return { vendor: 'Unbekannt', renderer: 'Unbekannt' };
-
-    return {
-      vendor: gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'Unbekannt',
-      renderer: gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'Unbekannt'
-    };
-  } catch {
-    return { vendor: 'Unbekannt', renderer: 'Unbekannt' };
-  }
-};
-
-const checkCapabilities = (): Capabilities => {
+  // Get GPU information
   const canvas = document.createElement('canvas');
-  
-  return {
-    webgl: !!canvas.getContext('webgl'),
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  const gpuInfo = gl ? {
+    vendor: (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).VENDOR),
+    renderer: (gl as WebGLRenderingContext).getParameter((gl as WebGLRenderingContext).RENDERER)
+  } : {
+    vendor: 'Unknown',
+    renderer: 'Unknown'
+  };
+
+  // Get network information
+  const connection = nav.connection;
+  const startTime = performance.now();
+  const pingResponse = await fetch('/api/ping').catch(() => null);
+  const endTime = performance.now();
+  const pingTime = Math.round(endTime - startTime);
+
+  // Get browser details
+  const userAgent = nav.userAgent;
+  const browserInfo = {
+    name: getBrowserName(userAgent),
+    version: getBrowserVersion(userAgent),
+    userAgent: userAgent,
+    platform: nav.platform,
+    cookiesEnabled: nav.cookieEnabled,
+    doNotTrack: nav.doNotTrack === '1' || nav.doNotTrack === 'yes',
+    languages: nav.languages
+  };
+
+  // Get screen information
+  const screenInfo = {
+    width: screen.width,
+    height: screen.height,
+    colorDepth: screen.colorDepth,
+    pixelRatio: window.devicePixelRatio,
+    orientation: screen.orientation?.type || 'unknown'
+  };
+
+  // Get capabilities
+  const capabilities = {
+    webgl: !!gl,
     webgl2: !!canvas.getContext('webgl2'),
     canvas: !!canvas.getContext('2d'),
     webrtc: !!window.RTCPeerConnection,
-    audio: !!(window.AudioContext || (window as WindowWithWebkit).webkitAudioContext),
-    cookies: navigator.cookieEnabled,
+    audio: !!window.AudioContext || !!(window as any).webkitAudioContext,
+    cookies: nav.cookieEnabled,
     localStorage: !!window.localStorage,
     sessionStorage: !!window.sessionStorage,
     serviceWorker: 'serviceWorker' in navigator,
     webAssembly: typeof WebAssembly === 'object'
   };
-};
 
-export const getUserInfo = async (): Promise<UserInfo> => {
-  const ipResponse = await fetch('https://ipapi.co/json/');
-  const ipData = await ipResponse.json() as {
-    ip: string;
-    city: string;
-    region: string;
-    country_name: string;
-    country_code: string;
+  // Get network quality
+  const networkQuality = getNetworkQuality(connection);
+
+  // Get location info (this will be updated by the worker with actual data)
+  const location = {
+    city: 'Unknown',
+    region: 'Unknown',
+    country: 'Unknown',
+    countryCode: 'Unknown'
   };
 
-  const ua = navigator.userAgent;
-  const browserInfo = {
-    chrome: /chrome/i.test(ua),
-    safari: /safari/i.test(ua),
-    firefox: /firefox/i.test(ua),
-    opera: /opera/i.test(ua),
-    ie: /msie/i.test(ua),
-    edge: /edge/i.test(ua),
+  return {
+    timestamp: new Date().toISOString(),
+    ipAddress: 'To be filled by worker',
+    browser: `${browserInfo.name} ${browserInfo.version}`,
+    os: getOS(userAgent),
+    deviceType: getDeviceType(userAgent),
+    screenResolution: `${screenInfo.width}x${screenInfo.height}`,
+    language: nav.language || 'unknown',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    browserDetails: browserInfo,
+    hardware: {
+      screenInfo,
+      gpu: gpuInfo,
+      memory: getTotalMemory(),
+      deviceMemory: nav.deviceMemory || 0,
+      hardwareConcurrency: nav.hardwareConcurrency || 0,
+      maxTouchPoints: nav.maxTouchPoints || 0,
+      hasTouchscreen: hasTouchScreen(),
+      hasGamepad: 'getGamepads' in navigator
+    },
+    capabilities,
+    network: {
+      type: connection?.type || 'unknown',
+      downlink: connection?.downlink || 0,
+      rtt: connection?.rtt || 0,
+      saveData: connection?.saveData || false,
+      effectiveType: connection?.effectiveType || 'unknown',
+      online: navigator.onLine,
+      pingTime: pingTime,
+      connectionQuality: networkQuality.quality,
+      estimatedSpeed: networkQuality.speed
+    },
+    location
   };
+}
 
-  let browser = 'Unknown';
-  if (browserInfo.edge) browser = 'Edge';
-  else if (browserInfo.chrome) browser = 'Chrome';
-  else if (browserInfo.firefox) browser = 'Firefox';
-  else if (browserInfo.safari) browser = 'Safari';
-  else if (browserInfo.opera) browser = 'Opera';
-  else if (browserInfo.ie) browser = 'Internet Explorer';
+function getBrowserName(userAgent: string): string {
+  if (userAgent.includes('Chrome')) return 'Chrome';
+  if (userAgent.includes('Firefox')) return 'Firefox';
+  if (userAgent.includes('Safari')) return 'Safari';
+  if (userAgent.includes('Edge')) return 'Edge';
+  if (userAgent.includes('Opera')) return 'Opera';
+  return 'Unknown';
+}
 
-  const version = ua.match(new RegExp(`${browser}\\/([\\d.]+)`)) || 
-                 ua.match(/(?:rv:|it\/|ra\/|ie\/)([\\d.]+)/i) || ['', 'Unknown'];
+function getBrowserVersion(userAgent: string): string {
+  const match = userAgent.match(/(Chrome|Firefox|Safari|Edge|Opera)\/(\d+\.\d+\.\d+\.\d+)/);
+  return match ? match[2] : 'Unknown';
+}
 
-  let os = 'Unknown';
-  if (ua.includes('Windows')) os = 'Windows';
-  else if (ua.includes('Mac')) os = 'macOS';
-  else if (ua.includes('Linux')) os = 'Linux';
-  else if (ua.includes('Android')) os = 'Android';
-  else if (ua.includes('iOS')) os = 'iOS';
+function getOS(userAgent: string): string {
+  if (userAgent.includes('Windows')) return 'Windows';
+  if (userAgent.includes('Mac OS X')) return 'macOS';
+  if (userAgent.includes('Linux')) return 'Linux';
+  if (userAgent.includes('Android')) return 'Android';
+  if (userAgent.includes('iOS')) return 'iOS';
+  return 'Unknown';
+}
 
-  let deviceType = 'Unknown';
-  if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
-    deviceType = /iPad/i.test(ua) ? 'Tablet' : 'Smartphone';
-  } else {
-    deviceType = 'Desktop';
+function getDeviceType(userAgent: string): string {
+  if (userAgent.includes('Mobile')) return 'Mobile';
+  if (userAgent.includes('Tablet')) return 'Tablet';
+  return 'Desktop';
+}
+
+function getTotalMemory(): number {
+  const nav = navigator as NavigatorWithMemory;
+  return nav.deviceMemory || 0;
+}
+
+function hasTouchScreen(): boolean {
+  return (
+    ('ontouchstart' in window) ||
+    (navigator.maxTouchPoints > 0) ||
+    ((navigator as any).msMaxTouchPoints > 0)
+  );
+}
+
+function getNetworkQuality(connection?: NetworkInformation) {
+  if (!connection) {
+    return { quality: 'unknown', speed: 'unknown' };
   }
 
-  const screenResolution = `${window.screen.width}x${window.screen.height}`;
-  const language = navigator.language || 'Unknown';
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let quality = 'unknown';
+  let speed = 'unknown';
 
-  const nav = navigator as NavigatorWithMemory;
+  if (connection.effectiveType === '4g' && connection.downlink > 5) {
+    quality = 'good';
+    speed = 'fast';
+  } else if (connection.effectiveType === '4g') {
+    quality = 'good';
+    speed = 'medium';
+  } else if (connection.effectiveType === '3g') {
+    quality = 'fair';
+    speed = 'slow';
+  } else {
+    quality = 'poor';
+    speed = 'very-slow';
+  }
 
-  const hardware: HardwareInfo = {
-    screenInfo: {
-      width: window.screen.width,
-      height: window.screen.height,
-      colorDepth: window.screen.colorDepth,
-      pixelRatio: window.devicePixelRatio,
-      orientation: screen.orientation.type
-    },
-    gpu: getGPUInfo(),
-    memory: nav.deviceMemory,
-    deviceMemory: nav.deviceMemory,
-    hardwareConcurrency: navigator.hardwareConcurrency,
-    maxTouchPoints: navigator.maxTouchPoints,
-    hasTouchscreen: 'ontouchstart' in window,
-    hasGamepad: 'getGamepads' in navigator
-  };
-
-  const userInfo: UserInfo = {
-    ipAddress: ipData.ip,
-    browser: `${browser} ${version[1]}`,
-    os,
-    deviceType,
-    screenResolution,
-    language,
-    timezone,
-    browserDetails: {
-      name: browser,
-      version: version[1],
-      userAgent: ua,
-      platform: navigator.platform,
-      cookiesEnabled: navigator.cookieEnabled,
-      doNotTrack: navigator.doNotTrack === '1' || navigator.doNotTrack === 'yes',
-      languages: navigator.languages
-    },
-    hardware,
-    capabilities: checkCapabilities(),
-    network: getBasicNetworkInfo(),
-    location: {
-      city: ipData.city || 'Unbekannt',
-      region: ipData.region || 'Unbekannt',
-      country: ipData.country_name || 'Unbekannt',
-      countryCode: ipData.country_code || 'XX'
-    }
-  };
-
-  console.log(' Basis Besucher Information gesammelt');
-
-  return userInfo;
-};
+  return { quality, speed };
+}
