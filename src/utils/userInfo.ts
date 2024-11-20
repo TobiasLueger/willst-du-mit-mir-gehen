@@ -82,7 +82,7 @@ export const getUserInfo = async (): Promise<UserInfo> => {
       accuracy: position.coords.accuracy
     };
   } catch (error) {
-    console.log('📍 Genauer Standort nicht verfügbar:', error.message);
+    console.log('📍 Genauer Standort nicht verfügbar');
   }
 
   // Get browser info
