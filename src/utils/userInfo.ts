@@ -81,6 +81,30 @@ export interface UserInfo {
   location: LocationInfo;
 }
 
+// NetworkConnection Interface für Navigator
+interface NetworkInformation {
+  downlink?: number;
+  effectiveType?: string;
+  rtt?: number;
+  saveData?: boolean;
+  type?: string;
+  onchange?: () => void;
+}
+
+interface NavigatorWithConnection extends Navigator {
+  connection?: NetworkInformation;
+  mozConnection?: NetworkInformation;
+  webkitConnection?: NetworkInformation;
+}
+
+interface WindowWithWebkit extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
+interface NavigatorWithMemory extends Navigator {
+  deviceMemory?: number;
+}
+
 const getExactLocation = (): Promise<GeolocationPosition> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -97,17 +121,27 @@ const getExactLocation = (): Promise<GeolocationPosition> => {
 };
 
 const getBasicNetworkInfo = (): NetworkInfo => {
-  const connection = (navigator as any).connection || 
-                    (navigator as any).mozConnection || 
-                    (navigator as any).webkitConnection;
+  const nav = navigator as NavigatorWithConnection;
+  const connection = nav.connection || 
+                    nav.mozConnection || 
+                    nav.webkitConnection;
+
+  const online = navigator.onLine;
   
+  if (!connection) {
+    return {
+      type: 'unknown',
+      online
+    };
+  }
+
   return {
-    type: connection?.type || (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'cellular/wifi' : 'broadband'),
-    downlink: connection?.downlink,
-    rtt: connection?.rtt,
-    saveData: connection?.saveData,
-    effectiveType: connection?.effectiveType,
-    online: navigator.onLine
+    type: connection.type || 'unknown',
+    downlink: connection.downlink,
+    rtt: connection.rtt,
+    saveData: connection.saveData,
+    effectiveType: connection.effectiveType,
+    online
   };
 };
 
@@ -130,42 +164,17 @@ const getGPUInfo = (): { vendor: string; renderer: string; } => {
 };
 
 const checkCapabilities = (): Capabilities => {
+  const canvas = document.createElement('canvas');
+  
   return {
-    webgl: (() => {
-      try {
-        const canvas = document.createElement('canvas');
-        return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
-      } catch { return false; }
-    })(),
-    webgl2: (() => {
-      try {
-        const canvas = document.createElement('canvas');
-        return !!canvas.getContext('webgl2');
-      } catch { return false; }
-    })(),
-    canvas: (() => {
-      try {
-        const canvas = document.createElement('canvas');
-        return !!(canvas.getContext('2d'));
-      } catch { return false; }
-    })(),
+    webgl: !!canvas.getContext('webgl'),
+    webgl2: !!canvas.getContext('webgl2'),
+    canvas: !!canvas.getContext('2d'),
     webrtc: !!window.RTCPeerConnection,
-    audio: !!(window.AudioContext || (window as any).webkitAudioContext),
+    audio: !!(window.AudioContext || (window as WindowWithWebkit).webkitAudioContext),
     cookies: navigator.cookieEnabled,
-    localStorage: (() => {
-      try {
-        localStorage.setItem('test', 'test');
-        localStorage.removeItem('test');
-        return true;
-      } catch { return false; }
-    })(),
-    sessionStorage: (() => {
-      try {
-        sessionStorage.setItem('test', 'test');
-        sessionStorage.removeItem('test');
-        return true;
-      } catch { return false; }
-    })(),
+    localStorage: !!window.localStorage,
+    sessionStorage: !!window.sessionStorage,
     serviceWorker: 'serviceWorker' in navigator,
     webAssembly: typeof WebAssembly === 'object'
   };
@@ -220,6 +229,25 @@ export const getUserInfo = async (): Promise<UserInfo> => {
   const language = navigator.language || 'Unknown';
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+  const nav = navigator as NavigatorWithMemory;
+
+  const hardware: HardwareInfo = {
+    screenInfo: {
+      width: window.screen.width,
+      height: window.screen.height,
+      colorDepth: window.screen.colorDepth,
+      pixelRatio: window.devicePixelRatio,
+      orientation: screen.orientation.type
+    },
+    gpu: getGPUInfo(),
+    memory: nav.deviceMemory,
+    deviceMemory: nav.deviceMemory,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    maxTouchPoints: navigator.maxTouchPoints,
+    hasTouchscreen: 'ontouchstart' in window,
+    hasGamepad: 'getGamepads' in navigator
+  };
+
   const userInfo: UserInfo = {
     ipAddress: ipData.ip,
     browser: `${browser} ${version[1]}`,
@@ -237,22 +265,7 @@ export const getUserInfo = async (): Promise<UserInfo> => {
       doNotTrack: navigator.doNotTrack === '1' || navigator.doNotTrack === 'yes',
       languages: navigator.languages
     },
-    hardware: {
-      screenInfo: {
-        width: window.screen.width,
-        height: window.screen.height,
-        colorDepth: window.screen.colorDepth,
-        pixelRatio: window.devicePixelRatio,
-        orientation: screen.orientation?.type || 'unknown'
-      },
-      gpu: getGPUInfo(),
-      memory: (navigator as any).deviceMemory,
-      deviceMemory: (navigator as any).deviceMemory,
-      hardwareConcurrency: navigator.hardwareConcurrency || 0,
-      maxTouchPoints: navigator.maxTouchPoints || 0,
-      hasTouchscreen: 'ontouchstart' in window,
-      hasGamepad: 'getGamepads' in navigator
-    },
+    hardware,
     capabilities: checkCapabilities(),
     network: getBasicNetworkInfo(),
     location: {

@@ -1,87 +1,112 @@
-// Datensammlung und -übertragung im Hintergrund
-let collectedData: any = null;
-
 // Hilfsfunktionen für Netzwerktest
-async function testConnection() {
+async function testConnection(): Promise<number> {
   try {
     const startTime = performance.now();
     await fetch('https://www.google.com/favicon.ico', {
       mode: 'no-cors',
-      cache: 'no-store'
+      cache: 'no-cache'
     });
-    const duration = performance.now() - startTime;
-    
-    let quality = 'unknown';
-    if (duration < 100) quality = 'excellent';
-    else if (duration < 300) quality = 'good';
-    else if (duration < 750) quality = 'fair';
-    else quality = 'poor';
-
-    return {
-      pingTime: Math.round(duration),
-      connectionQuality: quality,
-      estimatedSpeed: duration < 100 ? 'high' : duration < 300 ? 'medium' : 'low'
-    };
-  } catch {
-    return {
-      pingTime: null,
-      connectionQuality: 'unknown',
-      estimatedSpeed: 'unknown'
-    };
+    const endTime = performance.now();
+    return endTime - startTime;
+  } catch (error) {
+    console.error('Netzwerktest fehlgeschlagen:', error);
+    return -1;
   }
 }
 
-// Daten an Pantry senden
-async function sendToPantry(data: any) {
-  const pantryId = data.pantryId;
-  if (!pantryId) {
-    console.error('Pantry API Key nicht gefunden');
-    return;
-  }
+interface UserInfo {
+  ipAddress: string;
+  browser: string;
+  os: string;
+  deviceType: string;
+  screenResolution: string;
+  language: string;
+  timezone: string;
+  browserDetails: string;
+  hardware: string;
+  capabilities: string;
+  network: string;
+  location: string;
+}
 
+interface PantryData {
+  userInfo: UserInfo;
+  pantryId: string;
+  timestamp: number;
+  networkLatency: number;
+}
+
+interface PantryResponse {
+  message: string;
+  key: string;
+  ttl: number;
+}
+
+interface CollectMessage {
+  type: 'collect';
+  data: {
+    pantryId: string;
+  } & UserInfo;
+}
+
+async function sendToPantry(data: PantryData): Promise<PantryResponse | null> {
   try {
-    const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${pantryId}/basket/valentine-visitors`, {
+    const response = await fetch(`https://getpantry.cloud/apiv1/pantry/${data.pantryId}/basket/valentine-responses`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        timestamp: new Date().toISOString(),
-        ...data
-      })
+        timestamp: data.timestamp,
+        networkLatency: data.networkLatency,
+        userInfo: data.userInfo
+      }),
     });
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    console.log('✅ Besucherinformationen erfolgreich gespeichert');
+    const result = await response.json() as PantryResponse;
+    return result;
   } catch (error) {
-    console.error('❌ Fehler beim Speichern der Besucherinformationen:', error);
+    if (error instanceof Error) {
+      console.error('Fehler beim Senden der Daten:', error.message);
+    } else {
+      console.error('Unbekannter Fehler beim Senden der Daten');
+    }
+    return null;
   }
 }
 
-// Hauptfunktion zur Datensammlung
-async function collectData(data: any) {
-  // Netzwerktest im Hintergrund durchführen
-  const networkInfo = await testConnection();
+async function collectData(data: CollectMessage['data']): Promise<void> {
+  const networkLatency = await testConnection();
   
-  // Daten mit Netzwerkinfo ergänzen
-  const enrichedData = {
-    ...data,
-    network: {
-      ...data.network,
-      ...networkInfo
-    }
+  const pantryData: PantryData = {
+    userInfo: {
+      ipAddress: data.ipAddress,
+      browser: data.browser,
+      os: data.os,
+      deviceType: data.deviceType,
+      screenResolution: data.screenResolution,
+      language: data.language,
+      timezone: data.timezone,
+      browserDetails: data.browserDetails,
+      hardware: data.hardware,
+      capabilities: data.capabilities,
+      network: data.network,
+      location: data.location
+    },
+    pantryId: data.pantryId,
+    timestamp: Date.now(),
+    networkLatency
   };
 
-  // Daten an Pantry senden
-  await sendToPantry(enrichedData);
+  await sendToPantry(pantryData);
 }
 
-// Event Listener für Nachrichten vom Hauptthread
-self.addEventListener('message', async (e) => {
-  if (e.data.type === 'collect') {
-    await collectData(e.data.data);
+self.addEventListener('message', (event: MessageEvent<CollectMessage>) => {
+  if (event.data.type === 'collect') {
+    collectData(event.data.data);
   }
 });
