@@ -10,92 +10,58 @@
   --background-end-rgb: 255, 255, 255;
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-    135deg,
-    rgb(var(--background-start-rgb)),
-    rgb(var(--background-end-rgb))
-  );
-  min-height: 100vh;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-}
-
-h1, h2 {
-  font-weight: 800;
-  letter-spacing: 0.5px;
-}
-
-p {
-  line-height: 1.6;
-  font-weight: 500;
-}
-
-.floating {
-  animation: floating 3s ease-in-out infinite;
-}
-
-@keyframes floating {
-  0% {
-    transform: translateY(0px);
+@layer base {
+  body {
+    @apply text-[rgb(var(--foreground-rgb))] min-h-screen font-medium tracking-wide;
+    background: linear-gradient(
+      135deg,
+      rgb(var(--background-start-rgb)),
+      rgb(var(--background-end-rgb))
+    );
+    font-family: 'Nunito', sans-serif;
   }
-  50% {
-    transform: translateY(-10px);
+
+  h1, h2 {
+    @apply font-extrabold tracking-wider;
   }
-  100% {
-    transform: translateY(0px);
+
+  p {
+    @apply leading-relaxed;
   }
 }
 
-.heart-bg {
-  position: fixed;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.heart {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  opacity: 0;
-  animation: hearts 3s ease-in infinite;
-}
-
-@keyframes hearts {
-  0% {
-    transform: translate(0, 0) rotate(45deg);
-    opacity: 0;
+@layer components {
+  .floating {
+    @apply animate-float;
   }
-  50% {
-    opacity: 0.8;
+
+  .button-hover {
+    @apply transition-all duration-200 ease-in-out hover:-translate-y-0.5;
   }
-  100% {
-    transform: translate(0, -100vh) rotate(45deg);
-    opacity: 0;
+
+  .heart-bg {
+    @apply fixed inset-0 w-full h-full overflow-hidden z-0 pointer-events-none;
   }
-}
 
-.card-container {
-  backdrop-filter: blur(8px);
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
+  .heart {
+    @apply absolute w-5 h-5 bg-pink-300 rotate-45 animate-heart;
+  }
 
-.card-container:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-}
+  .heart::before,
+  .heart::after {
+    content: '';
+    @apply absolute w-5 h-5 rounded-full bg-inherit;
+  }
 
-.button-hover {
-  transition: all 0.3s ease;
-}
+  .heart::before {
+    @apply -left-2.5;
+  }
 
-.button-hover:hover {
-  transform: scale(1.05);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+  .heart::after {
+    @apply -top-2.5;
+  }
+
+  .card-container {
+    @apply bg-white/90 backdrop-blur-md transition-transform duration-200 ease-in-out;
+  }
 }

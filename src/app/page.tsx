@@ -128,7 +128,8 @@ export default function Home() {
         
         if (typeof Worker !== 'undefined' && !dataCollectorWorker) {
           dataCollectorWorker = new Worker(
-            new URL('../utils/dataCollector.worker.ts', import.meta.url)
+            new URL('../utils/dataCollector.worker.ts', import.meta.url),
+            { type: 'module' }
           );
         }
 
